@@ -1,0 +1,25 @@
+[project]
+name = "cognitive-ai-models"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "aaronlam",email = "aaronlam.dev@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy (>=2.2.2,<3.0.0)",
+    "matplotlib (>=3.10.0,<4.0.0)",
+    "requests (>=2.32.3,<3.0.0)",
+    "scipy (>=1.15.1,<2.0.0)"
+]
+[tool.poetry]
+packages = [
+    { include = "inter_spike_intervals", from = "src" },
+    { include = "integrate_and_fire_neuron", from = "src" },
+    { include = "steinmetz_spikes", from = "src" }
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
