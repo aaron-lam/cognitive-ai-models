@@ -66,73 +66,72 @@ class NeuralNetwork:
 
     def _initialize_parameters(self) -> dict[str, np.ndarray]:
         """Initialize network parameters using He initialization."""
-        np.random.default_rng(3)
+        rng = np.random.default_rng(3)
         parameters = {}
 
         for layer in range(1, len(self.layer_dims)):
-            parameters[f"W{layer}"] = np.random.randn(
-                self.layer_dims[layer],
-                self.layer_dims[layer - 1],
+            parameters[f"W{layer}"] = rng.standard_normal(
+                (self.layer_dims[layer], self.layer_dims[layer - 1]),
             ) * np.sqrt(2 / self.layer_dims[layer - 1])
             parameters[f"b{layer}"] = np.zeros((self.layer_dims[layer], 1))
 
         return parameters
 
-    def _forward_propagation(self, X: np.ndarray) -> tuple[np.ndarray, dict]:
+    def _forward_propagation(self, x: np.ndarray) -> tuple[np.ndarray, dict]:
         """Implement forward propagation.
 
         Args:
-            X: Input data of shape (input_size, m_examples)
+            x: Input data of shape (input_size, m_examples)
 
         Returns:
             A tuple of (final_activation, cache)
 
         """
         cache = {}
-        A = X
-        L = len(self.layer_dims)
+        activation = x
+        num_layers = len(self.layer_dims)
 
         # Forward propagate through layers
-        for l in range(1, L):
-            A_prev = A
-            W = self.parameters[f"W{l}"]
-            b = self.parameters[f"b{l}"]
+        for layer_idx in range(1, num_layers):
+            activation_prev = activation
+            weights = self.parameters[f"W{layer_idx}"]
+            bias = self.parameters[f"b{layer_idx}"]
 
-            Z = np.dot(W, A_prev) + b
+            z_curr = np.dot(weights, activation_prev) + bias
 
             # Use ReLU for hidden layers and sigmoid for output
-            if l == L - 1:
-                A = ActivationFunctions.sigmoid(Z)
+            if layer_idx == num_layers - 1:
+                activation = ActivationFunctions.sigmoid(z_curr)
             else:
-                A = ActivationFunctions.relu(Z)
+                activation = ActivationFunctions.relu(z_curr)
 
-            cache[f"A{l - 1}"] = A_prev
-            cache[f"Z{l}"] = Z
-            cache[f"A{l}"] = A
+            cache[f"A{layer_idx - 1}"] = activation_prev
+            cache[f"Z{layer_idx}"] = z_curr
+            cache[f"A{layer_idx}"] = activation
 
-        return A, cache
+        return activation, cache
 
-    def _compute_cost(self, AL: np.ndarray, Y: np.ndarray) -> float:
+    def _compute_cost(self, activation_final: np.ndarray, y: np.ndarray) -> float:
         """Compute binary cross-entropy cost.
 
         Args:
-            AL: Output of final layer, shape (1, m_examples)
-            Y: True labels, shape (1, m_examples)
+            activation_final: Output of final layer, shape (1, m_examples)
+            y: True labels, shape (1, m_examples)
 
         """
-        m = Y.shape[1]
+        m = y.shape[1]
         return (
             -np.sum(
-                Y * np.log(AL + self.config.epsilon)
-                + (1 - Y) * np.log(1 - AL + self.config.epsilon),
+                y * np.log(activation_final + self.config.epsilon)
+                + (1 - y) * np.log(1 - activation_final + self.config.epsilon),
             )
             / m
         )
 
     def _backward_propagation(
         self,
-        X: np.ndarray,
-        Y: np.ndarray,
+        x: np.ndarray,
+        y: np.ndarray,
         cache: dict,
     ) -> dict[str, np.ndarray]:
         """Implement backward propagation.
@@ -142,45 +141,47 @@ class NeuralNetwork:
 
         """
         grads = {}
-        m = X.shape[1]
-        L = len(self.layer_dims)
+        m = x.shape[1]
+        num_layers = len(self.layer_dims)
 
         # Output layer
-        AL = cache[f"A{L - 1}"]
-        dAL = -(
-            np.divide(Y, AL + self.config.epsilon)
-            - np.divide(1 - Y, 1 - AL + self.config.epsilon)
+        activation_final = cache[f"A{num_layers - 1}"]
+        dactivation_final = -(
+            np.divide(y, activation_final + self.config.epsilon)
+            - np.divide(1 - y, 1 - activation_final + self.config.epsilon)
         )
 
         # Current layer gradients
-        dZ = dAL * AL * (1 - AL)  # Sigmoid derivative
-        grads[f"dW{L - 1}"] = np.dot(dZ, cache[f"A{L - 2}"].T) / m
-        grads[f"db{L - 1}"] = np.sum(dZ, axis=1, keepdims=True) / m
+        dZ = (
+            dactivation_final * activation_final * (1 - activation_final)
+        )  # Sigmoid derivative
+        grads[f"dW{num_layers - 1}"] = np.dot(dZ, cache[f"A{num_layers - 2}"].T) / m
+        grads[f"db{num_layers - 1}"] = np.sum(dZ, axis=1, keepdims=True) / m
 
         # Hidden layers
-        for l in reversed(range(1, L - 1)):
-            dA = np.dot(self.parameters[f"W{l + 1}"].T, dZ)
-            dZ = dA * (cache[f"A{l}"] > 0)  # ReLU derivative
-            grads[f"dW{l}"] = np.dot(dZ, cache[f"A{l - 1}"].T) / m
-            grads[f"db{l}"] = np.sum(dZ, axis=1, keepdims=True) / m
+        for layer_idx in reversed(range(1, num_layers - 1)):
+            dactivation = np.dot(self.parameters[f"W{layer_idx + 1}"].T, dZ)
+            dZ = dactivation * (cache[f"A{layer_idx}"] > 0)  # ReLU derivative
+            grads[f"dW{layer_idx}"] = np.dot(dZ, cache[f"A{layer_idx - 1}"].T) / m
+            grads[f"db{layer_idx}"] = np.sum(dZ, axis=1, keepdims=True) / m
 
         return grads
 
     def _random_mini_batches(
         self,
-        X: np.ndarray,
-        Y: np.ndarray,
+        x: np.ndarray,
+        y: np.ndarray,
         seed: int,
     ) -> list[tuple[np.ndarray, np.ndarray]]:
         """Create random mini-batches from training data."""
         rng = np.random.default_rng(seed)
-        m = X.shape[1]
+        m = x.shape[1]
         mini_batches = []
 
         # Shuffle
         permutation = list(rng.permutation(m))
-        shuffled_X = X[:, permutation]
-        shuffled_Y = Y[:, permutation].reshape((1, m))
+        shuffled_x = x[:, permutation]
+        shuffled_y = y[:, permutation].reshape((1, m))
 
         # Create mini-batches
         num_complete_batches = m // self.config.mini_batch_size
@@ -188,30 +189,30 @@ class NeuralNetwork:
         for k in range(num_complete_batches):
             start_idx = k * self.config.mini_batch_size
             end_idx = (k + 1) * self.config.mini_batch_size
-            mini_batch_X = shuffled_X[:, start_idx:end_idx]
-            mini_batch_Y = shuffled_Y[:, start_idx:end_idx]
-            mini_batches.append((mini_batch_X, mini_batch_Y))
+            mini_batch_x = shuffled_x[:, start_idx:end_idx]
+            mini_batch_y = shuffled_y[:, start_idx:end_idx]
+            mini_batches.append((mini_batch_x, mini_batch_y))
 
         # Handle final incomplete batch if needed
         if m % self.config.mini_batch_size != 0:
-            mini_batch_X = shuffled_X[
+            mini_batch_x = shuffled_x[
                 :,
                 num_complete_batches * self.config.mini_batch_size :,
             ]
-            mini_batch_Y = shuffled_Y[
+            mini_batch_y = shuffled_y[
                 :,
                 num_complete_batches * self.config.mini_batch_size :,
             ]
-            mini_batches.append((mini_batch_X, mini_batch_Y))
+            mini_batches.append((mini_batch_x, mini_batch_y))
 
         return mini_batches
 
-    def train(self, X: np.ndarray, Y: np.ndarray) -> list[float]:
+    def train(self, x: np.ndarray, y: np.ndarray) -> list[float]:
         """Train the neural network.
 
         Args:
-            X: Training data of shape (n_features, m_examples)
-            Y: Labels of shape (1, m_examples)
+            x: Training data of shape (n_features, m_examples)
+            y: Labels of shape (1, m_examples)
 
         Returns:
             list of costs during training
@@ -219,7 +220,7 @@ class NeuralNetwork:
         """
         costs = []
         t = 0  # Adam iteration counter
-        m = X.shape[1]
+        m = x.shape[1]
 
         # Initialize optimizer-specific variables
         if self.optimizer_type == OptimizerType.MOMENTUM:
@@ -230,20 +231,20 @@ class NeuralNetwork:
         # Training loop
         for i in range(self.config.num_epochs):
             epoch_cost = 0
-            mini_batches = self._random_mini_batches(X, Y, seed=i)
+            mini_batches = self._random_mini_batches(x, y, seed=i)
 
             for mini_batch in mini_batches:
-                mini_X, mini_Y = mini_batch
+                mini_x, mini_y = mini_batch
 
                 # Forward propagation
-                AL, cache = self._forward_propagation(mini_X)
+                activation, cache = self._forward_propagation(mini_x)
 
                 # Compute cost
-                mini_cost = self._compute_cost(AL, mini_Y)
+                mini_cost = self._compute_cost(activation, mini_y)
                 epoch_cost += mini_cost
 
                 # Backward propagation
-                grads = self._backward_propagation(mini_X, mini_Y, cache)
+                grads = self._backward_propagation(mini_x, mini_y, cache)
 
                 # Update parameters based on optimizer
                 if self.optimizer_type == OptimizerType.GRADIENT_DESCENT:
@@ -266,28 +267,28 @@ class NeuralNetwork:
 
         return costs
 
-    def predict(self, X: np.ndarray) -> int:
+    def predict(self, x: np.ndarray) -> int:
         """Make predictions using trained model.
 
         Args:
-            X: Input data of shape (n_features, m_examples)
+            x: Input data of shape (n_features, m_examples)
 
         Returns:
             Predictions (0/1) of shape (1, m_examples)
 
         """
-        AL, _ = self._forward_propagation(X)
+        activation, _ = self._forward_propagation(x)
         threshold = 0.5
-        return (threshold < AL).astype(int)
+        return (threshold < activation).astype(int)
 
     def _initialize_velocity(self) -> dict[str, np.ndarray]:
         """Initialize velocity for momentum optimization."""
         v = {}
-        L = len(self.layer_dims)
+        num_layers = len(self.layer_dims)
 
-        for l in range(1, L):
-            v[f"dW{l}"] = np.zeros_like(self.parameters[f"W{l}"])
-            v[f"db{l}"] = np.zeros_like(self.parameters[f"b{l}"])
+        for layer_idx in range(1, num_layers):
+            v[f"dW{layer_idx}"] = np.zeros_like(self.parameters[f"W{layer_idx}"])
+            v[f"db{layer_idx}"] = np.zeros_like(self.parameters[f"b{layer_idx}"])
 
         return v
 
@@ -295,23 +296,27 @@ class NeuralNetwork:
         """Initialize Adam optimizer variables."""
         v = {}  # First moment
         s = {}  # Second moment
-        L = len(self.layer_dims)
+        num_layers = len(self.layer_dims)
 
-        for l in range(1, L):
-            v[f"dW{l}"] = np.zeros_like(self.parameters[f"W{l}"])
-            v[f"db{l}"] = np.zeros_like(self.parameters[f"b{l}"])
-            s[f"dW{l}"] = np.zeros_like(self.parameters[f"W{l}"])
-            s[f"db{l}"] = np.zeros_like(self.parameters[f"b{l}"])
+        for layer_idx in range(1, num_layers):
+            v[f"dW{layer_idx}"] = np.zeros_like(self.parameters[f"W{layer_idx}"])
+            v[f"db{layer_idx}"] = np.zeros_like(self.parameters[f"b{layer_idx}"])
+            s[f"dW{layer_idx}"] = np.zeros_like(self.parameters[f"W{layer_idx}"])
+            s[f"db{layer_idx}"] = np.zeros_like(self.parameters[f"b{layer_idx}"])
 
         return v, s
 
     def _update_parameters_gd(self, grads: dict[str, np.ndarray]) -> None:
         """Update parameters using gradient descent."""
-        L = len(self.layer_dims)
+        num_layers = len(self.layer_dims)
 
-        for l in range(1, L):
-            self.parameters[f"W{l}"] -= self.config.learning_rate * grads[f"dW{l}"]
-            self.parameters[f"b{l}"] -= self.config.learning_rate * grads[f"db{l}"]
+        for layer_idx in range(1, num_layers):
+            self.parameters[f"W{layer_idx}"] -= (
+                self.config.learning_rate * grads[f"dW{layer_idx}"]
+            )
+            self.parameters[f"b{layer_idx}"] -= (
+                self.config.learning_rate * grads[f"db{layer_idx}"]
+            )
 
     def _update_parameters_momentum(
         self,
@@ -319,22 +324,26 @@ class NeuralNetwork:
         v: dict[str, np.ndarray],
     ) -> None:
         """Update parameters using momentum optimization."""
-        L = len(self.layer_dims)
+        num_layers = len(self.layer_dims)
 
-        for l in range(1, L):
+        for layer_idx in range(1, num_layers):
             # Update velocities
-            v[f"dW{l}"] = (
-                self.config.beta * v[f"dW{l}"]
-                + (1 - self.config.beta) * grads[f"dW{l}"]
+            v[f"dW{layer_idx}"] = (
+                self.config.beta * v[f"dW{layer_idx}"]
+                + (1 - self.config.beta) * grads[f"dW{layer_idx}"]
             )
-            v[f"db{l}"] = (
-                self.config.beta * v[f"db{l}"]
-                + (1 - self.config.beta) * grads[f"db{l}"]
+            v[f"db{layer_idx}"] = (
+                self.config.beta * v[f"db{layer_idx}"]
+                + (1 - self.config.beta) * grads[f"db{layer_idx}"]
             )
 
             # Update parameters
-            self.parameters[f"W{l}"] -= self.config.learning_rate * v[f"dW{l}"]
-            self.parameters[f"b{l}"] -= self.config.learning_rate * v[f"db{l}"]
+            self.parameters[f"W{layer_idx}"] -= (
+                self.config.learning_rate * v[f"dW{layer_idx}"]
+            )
+            self.parameters[f"b{layer_idx}"] -= (
+                self.config.learning_rate * v[f"db{layer_idx}"]
+            )
 
     def _update_parameters_adam(
         self,
@@ -344,46 +353,54 @@ class NeuralNetwork:
         t: int,
     ) -> None:
         """Update parameters using Adam optimization."""
-        L = len(self.layer_dims)
+        num_layers = len(self.layer_dims)
         v_corrected = {}
         s_corrected = {}
 
-        for l in range(1, L):
+        for layer_idx in range(1, num_layers):
             # Update first moment
-            v[f"dW{l}"] = (
-                self.config.beta1 * v[f"dW{l}"]
-                + (1 - self.config.beta1) * grads[f"dW{l}"]
+            v[f"dW{layer_idx}"] = (
+                self.config.beta1 * v[f"dW{layer_idx}"]
+                + (1 - self.config.beta1) * grads[f"dW{layer_idx}"]
             )
-            v[f"db{l}"] = (
-                self.config.beta1 * v[f"db{l}"]
-                + (1 - self.config.beta1) * grads[f"db{l}"]
+            v[f"db{layer_idx}"] = (
+                self.config.beta1 * v[f"db{layer_idx}"]
+                + (1 - self.config.beta1) * grads[f"db{layer_idx}"]
             )
 
             # Update second moment
-            s[f"dW{l}"] = self.config.beta2 * s[f"dW{l}"] + (
+            s[f"dW{layer_idx}"] = self.config.beta2 * s[f"dW{layer_idx}"] + (
                 1 - self.config.beta2
-            ) * np.square(grads[f"dW{l}"])
-            s[f"db{l}"] = self.config.beta2 * s[f"db{l}"] + (
+            ) * np.square(grads[f"dW{layer_idx}"])
+            s[f"db{layer_idx}"] = self.config.beta2 * s[f"db{layer_idx}"] + (
                 1 - self.config.beta2
-            ) * np.square(grads[f"db{l}"])
+            ) * np.square(grads[f"db{layer_idx}"])
 
             # Correct bias
-            v_corrected[f"dW{l}"] = v[f"dW{l}"] / (1 - self.config.beta1**t)
-            v_corrected[f"db{l}"] = v[f"db{l}"] / (1 - self.config.beta1**t)
-            s_corrected[f"dW{l}"] = s[f"dW{l}"] / (1 - self.config.beta2**t)
-            s_corrected[f"db{l}"] = s[f"db{l}"] / (1 - self.config.beta2**t)
-
-            # Update parameters
-            self.parameters[f"W{l}"] -= (
-                self.config.learning_rate
-                * v_corrected[f"dW{l}"]
-                / (np.sqrt(s_corrected[f"dW{l}"]) + self.config.epsilon)
+            v_corrected[f"dW{layer_idx}"] = v[f"dW{layer_idx}"] / (
+                1 - self.config.beta1**t
+            )
+            v_corrected[f"db{layer_idx}"] = v[f"db{layer_idx}"] / (
+                1 - self.config.beta1**t
+            )
+            s_corrected[f"dW{layer_idx}"] = s[f"dW{layer_idx}"] / (
+                1 - self.config.beta2**t
+            )
+            s_corrected[f"db{layer_idx}"] = s[f"db{layer_idx}"] / (
+                1 - self.config.beta2**t
             )
 
-            self.parameters[f"b{l}"] -= (
+            # Update parameters
+            self.parameters[f"W{layer_idx}"] -= (
                 self.config.learning_rate
-                * v_corrected[f"db{l}"]
-                / (np.sqrt(s_corrected[f"db{l}"]) + self.config.epsilon)
+                * v_corrected[f"dW{layer_idx}"]
+                / (np.sqrt(s_corrected[f"dW{layer_idx}"]) + self.config.epsilon)
+            )
+
+            self.parameters[f"b{layer_idx}"] -= (
+                self.config.learning_rate
+                * v_corrected[f"db{layer_idx}"]
+                / (np.sqrt(s_corrected[f"db{layer_idx}"]) + self.config.epsilon)
             )
 
 
@@ -391,16 +408,16 @@ class ModelMetrics:
     """Utility class for computing model metrics."""
 
     @staticmethod
-    def compute_accuracy(predictions: np.ndarray, Y: np.ndarray) -> float:
+    def compute_accuracy(predictions: np.ndarray, y: np.ndarray) -> float:
         """Compute prediction accuracy."""
-        return np.mean(predictions == Y)
+        return np.mean(predictions == y)
 
     @staticmethod
-    def compute_f1_score(predictions: np.ndarray, Y: np.ndarray) -> float:
+    def compute_f1_score(predictions: np.ndarray, y: np.ndarray) -> float:
         """Compute F1 score."""
-        true_positives = np.sum((predictions == 1) & (Y == 1))
-        false_positives = np.sum((predictions == 1) & (Y == 0))
-        false_negatives = np.sum((predictions == 0) & (Y == 1))
+        true_positives = np.sum((predictions == 1) & (y == 1))
+        false_positives = np.sum((predictions == 1) & (y == 0))
+        false_negatives = np.sum((predictions == 0) & (y == 1))
 
         precision = true_positives / (true_positives + false_positives + 1e-10)
         recall = true_positives / (true_positives + false_negatives + 1e-10)
@@ -433,9 +450,9 @@ def create_neural_network(
 
 if __name__ == "__main__":
     # Generate sample data
-    X, Y = sklearn.datasets.make_moons(n_samples=300, noise=0.2)
-    X = X.T
-    Y = Y.reshape(1, -1)
+    x, y = sklearn.datasets.make_moons(n_samples=300, noise=0.2)
+    x = x.T
+    y = y.reshape(1, -1)
 
     # Create and configure network
     layer_dims = [2, 5, 2, 1]  # 2 input features, 2 hidden layers, 1 output
@@ -450,14 +467,14 @@ if __name__ == "__main__":
     )
 
     # Train model
-    model.train(X, Y)
+    model.train(x, y)
 
     # Make predictions
-    predictions = model.predict(X)
+    predictions = model.predict(x)
 
     # Compute metrics
-    accuracy = ModelMetrics.compute_accuracy(predictions, Y)
-    f1_score = ModelMetrics.compute_f1_score(predictions, Y)
+    accuracy = ModelMetrics.compute_accuracy(predictions, y)
+    f1_score = ModelMetrics.compute_f1_score(predictions, y)
 
     accuracy_msg = f"Final accuracy: {accuracy:.4f}"
     f1_msg = f"F1 score: {f1_score:.4f}"
